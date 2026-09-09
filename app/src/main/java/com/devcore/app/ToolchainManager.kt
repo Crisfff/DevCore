@@ -9,6 +9,8 @@ import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.nio.file.Files
+import java.nio.file.Paths
 import java.util.zip.ZipInputStream
 
 class ToolchainManager(private val context: Context) {
@@ -126,21 +128,37 @@ class ToolchainManager(private val context: Context) {
         val counting = ProgressInputStream(BufferedInputStream(conn.inputStream), total) { downloaded, all ->
             if (all > 0) progress("Downloading… ${(downloaded * 100 / all).coerceIn(0, 100)}%")
         }
+        val pendingLinks = mutableListOf<Triple<File, String, Boolean>>()
         XZCompressorInputStream(counting).use { xz ->
             TarArchiveInputStream(xz).use { tar ->
                 var entry = tar.nextTarEntry
                 while (entry != null) {
                     val out = safeFile(destination, entry.name)
-                    if (entry.isDirectory) {
-                        out.mkdirs()
-                    } else if (entry.isSymbolicLink) {
-                        // Symlinks are recreated later only when they are essential. Most JDK/SDK files are regular files.
-                    } else {
-                        out.parentFile?.mkdirs()
-                        FileOutputStream(out).use { tar.copyTo(it) }
-                        if (entry.mode and 0b001001001 != 0) out.setExecutable(true, false)
+                    when {
+                        entry.isDirectory -> out.mkdirs()
+                        entry.isSymbolicLink -> pendingLinks += Triple(out, entry.linkName, false)
+                        entry.isLink -> pendingLinks += Triple(out, entry.linkName, true)
+                        else -> {
+                            out.parentFile?.mkdirs()
+                            FileOutputStream(out).use { tar.copyTo(it) }
+                            if (entry.mode and 0b001001001 != 0) out.setExecutable(true, false)
+                        }
                     }
                     entry = tar.nextTarEntry
+                }
+            }
+        }
+
+        pendingLinks.forEach { (out, linkName, hardLink) ->
+            runCatching {
+                out.parentFile?.mkdirs()
+                Files.deleteIfExists(out.toPath())
+                if (hardLink) {
+                    val target = safeFile(destination, linkName)
+                    Files.createLink(out.toPath(), target.toPath())
+                } else {
+                    val targetPath = Paths.get(linkName)
+                    Files.createSymbolicLink(out.toPath(), targetPath)
                 }
             }
         }
