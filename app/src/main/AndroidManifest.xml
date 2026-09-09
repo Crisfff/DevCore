@@ -5,7 +5,9 @@
     <application
         android:theme="@style/Theme.DevCore"
         android:label="DevCore"
-        android:allowBackup="true">
+        android:allowBackup="true"
+        android:allowNativeHeapPointerTagging="false"
+        android:extractNativeLibs="true">
 
         <activity android:name=".BuildActivity" android:exported="false" />
         <activity android:name=".EditorActivity" android:exported="false" />
