@@ -29,10 +29,13 @@ class LocalBuildEngine(private val context: Context) {
         }
 
         return try {
+            val buildNumber = ProjectStore.nextBuildNumber(project)
             val command = listOf(
                 gradleBin.absolutePath,
                 "--no-daemon",
                 "--console=plain",
+                "-Duser.home=${context.filesDir.absolutePath}",
+                "-PdevcoreBuildNumber=$buildNumber",
                 "-Pandroid.aapt2FromMavenOverride=${paths.aapt2.absolutePath}",
                 "assembleDebug"
             )
@@ -62,9 +65,9 @@ class LocalBuildEngine(private val context: Context) {
                 .maxByOrNull { it.lastModified() }
 
             if (code == 0 && apk != null) {
-                Result(true, "$log\n\nAPK: ${apk.absolutePath}", apk)
+                Result(true, "Build #$buildNumber\n$log\n\nAPK: ${apk.absolutePath}", apk)
             } else {
-                Result(false, "$log\n\nGradle exited with code $code.", apk)
+                Result(false, "Build #$buildNumber\n$log\n\nGradle exited with code $code.", apk)
             }
         } catch (e: Exception) {
             Result(false, "Build failed to start: ${e.javaClass.simpleName}: ${e.message}", null)
