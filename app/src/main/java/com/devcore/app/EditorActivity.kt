@@ -8,6 +8,7 @@ import android.widget.EditText
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import java.io.File
 
@@ -49,14 +50,28 @@ class EditorActivity : AppCompatActivity() {
             saveCurrent(true)
             startActivity(Intent(this, BuildActivity::class.java).putExtra("projectPath", project.root.absolutePath))
         }
+        findViewById<Button>(R.id.newFileButton).setOnClickListener { showCreateDialog(folder = false) }
+        findViewById<Button>(R.id.newFolderButton).setOnClickListener { showCreateDialog(folder = true) }
+        findViewById<Button>(R.id.deleteFileButton).setOnClickListener { confirmDeleteCurrent() }
     }
 
-    private fun reloadFiles() {
+    private fun reloadFiles(select: File? = null) {
         files = ProjectStore.editableFiles(project)
         val labels = files.map { it.relativeTo(project.root).path }
         spinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, labels)
-        val preferred = files.indexOfFirst { it.name == "MainActivity.kt" }.takeIf { it >= 0 } ?: 0
-        if (files.isNotEmpty()) spinner.setSelection(preferred)
+        if (files.isEmpty()) {
+            currentFile = null
+            pathLabel.text = "No editable files"
+            editor.setText("")
+            return
+        }
+        val preferred = when {
+            select != null -> files.indexOfFirst { it.absolutePath == select.absolutePath }.takeIf { it >= 0 }
+            currentFile != null -> files.indexOfFirst { it.absolutePath == currentFile?.absolutePath }.takeIf { it >= 0 }
+            else -> files.indexOfFirst { it.name == "MainActivity.kt" }.takeIf { it >= 0 }
+        } ?: 0
+        spinner.setSelection(preferred)
+        openFile(files[preferred])
     }
 
     private fun openFile(file: File) {
@@ -76,6 +91,52 @@ class EditorActivity : AppCompatActivity() {
         }.onFailure {
             Toast.makeText(this, "Save failed: ${it.message}", Toast.LENGTH_LONG).show()
         }
+    }
+
+    private fun showCreateDialog(folder: Boolean) {
+        val input = EditText(this).apply {
+            hint = if (folder) "app/src/main/res/drawable" else "app/src/main/java/com/example/MyFile.kt"
+            setSingleLine(true)
+            setPadding(36, 12, 36, 12)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(if (folder) "New Folder" else "New File")
+            .setMessage("Enter a path relative to the project root")
+            .setView(input)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Create") { _, _ ->
+                runCatching {
+                    if (folder) {
+                        ProjectStore.createFolder(project, input.text.toString())
+                        null
+                    } else {
+                        ProjectStore.createFile(project, input.text.toString())
+                    }
+                }.onSuccess { created ->
+                    reloadFiles(created)
+                }.onFailure {
+                    Toast.makeText(this, it.message ?: "Could not create item", Toast.LENGTH_LONG).show()
+                }
+            }
+            .show()
+    }
+
+    private fun confirmDeleteCurrent() {
+        val file = currentFile ?: return
+        val relative = file.relativeTo(project.root).path
+        AlertDialog.Builder(this)
+            .setTitle("Delete file?")
+            .setMessage(relative)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Delete") { _, _ ->
+                runCatching { ProjectStore.deleteFile(project, file) }
+                    .onSuccess {
+                        currentFile = null
+                        reloadFiles()
+                    }
+                    .onFailure { Toast.makeText(this, it.message ?: "Delete failed", Toast.LENGTH_LONG).show() }
+            }
+            .show()
     }
 
     override fun onPause() {
