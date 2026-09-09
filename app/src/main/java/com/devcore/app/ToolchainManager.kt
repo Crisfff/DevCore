@@ -10,14 +10,13 @@ import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.file.Files
-import java.nio.file.Paths
 import java.util.zip.ZipInputStream
 
 class ToolchainManager(private val context: Context) {
     private val root = File(context.filesDir, "toolchain")
     private val marker = File(root, ".ready")
 
-    data class Paths(
+    data class ToolchainPaths(
         val javaHome: File,
         val gradleHome: File,
         val sdkRoot: File,
@@ -26,12 +25,12 @@ class ToolchainManager(private val context: Context) {
 
     fun isSupportedDevice(): Boolean = Build.SUPPORTED_64_BIT_ABIS.any { it == "arm64-v8a" }
 
-    fun resolve(): Paths? {
+    fun resolve(): ToolchainPaths? {
         if (!marker.exists()) return null
         return resolveWithoutMarker()
     }
 
-    private fun resolveWithoutMarker(): Paths? {
+    private fun resolveWithoutMarker(): ToolchainPaths? {
         if (!root.exists()) return null
         val java = root.walkTopDown().firstOrNull { it.isFile && it.name == "java" && it.parentFile?.name == "bin" }
             ?: return null
@@ -45,7 +44,7 @@ class ToolchainManager(private val context: Context) {
             .firstOrNull { File(it, "platforms").exists() }
             ?: return null
 
-        return Paths(
+        return ToolchainPaths(
             javaHome = java.parentFile.parentFile,
             gradleHome = gradle.parentFile.parentFile,
             sdkRoot = sdkRoot,
@@ -53,7 +52,7 @@ class ToolchainManager(private val context: Context) {
         )
     }
 
-    fun install(onProgress: (String) -> Unit): Result<Paths> = runCatching {
+    fun install(onProgress: (String) -> Unit): Result<ToolchainPaths> = runCatching {
         require(isSupportedDevice()) { "Local builds currently require an arm64-v8a device." }
         root.mkdirs()
         marker.delete()
@@ -157,7 +156,7 @@ class ToolchainManager(private val context: Context) {
                     val target = safeFile(destination, linkName)
                     Files.createLink(out.toPath(), target.toPath())
                 } else {
-                    val targetPath = Paths.get(linkName)
+                    val targetPath = java.nio.file.Paths.get(linkName)
                     Files.createSymbolicLink(out.toPath(), targetPath)
                 }
             }
