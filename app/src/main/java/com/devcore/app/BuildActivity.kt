@@ -61,9 +61,16 @@ class BuildActivity : AppCompatActivity() {
                 setupButton.text = "Recheck Build Tools"
                 buildButton.isEnabled = true
             }
+            manager.hasBundledToolchain() -> {
+                status.text = "Build tools included · tap once to prepare"
+                setupButton.text = "Prepare Build Tools"
+                setupButton.isEnabled = true
+                buildButton.isEnabled = false
+            }
             else -> {
-                status.text = "Build tools not installed · first setup requires a large download"
-                setupButton.text = "Setup Build Tools"
+                status.text = "Embedded build tools are missing from this DevCore build"
+                setupButton.text = "Build Tools Unavailable"
+                setupButton.isEnabled = false
                 buildButton.isEnabled = false
             }
         }
@@ -79,7 +86,7 @@ class BuildActivity : AppCompatActivity() {
 
         setupButton.isEnabled = false
         buildButton.isEnabled = false
-        output.text = "Preparing local build environment…\nKeep DevCore open during the first setup.\n"
+        output.text = "Preparing the build tools included inside DevCore…\nNo internet download is required.\nKeep DevCore open during extraction.\n"
 
         Thread {
             val result = manager.install { message ->
@@ -91,7 +98,7 @@ class BuildActivity : AppCompatActivity() {
             runOnUiThread {
                 setupButton.isEnabled = true
                 result.onSuccess {
-                    output.append("\n✓ Toolchain installed successfully.\n")
+                    output.append("\n✓ Embedded toolchain prepared successfully.\n")
                     refreshToolchainStatus()
                 }.onFailure { error ->
                     output.append("\n✗ Setup failed: ${error.message}\n")
@@ -104,7 +111,7 @@ class BuildActivity : AppCompatActivity() {
 
     private fun startBuild() {
         if (ToolchainManager(this).resolve() == null) {
-            Toast.makeText(this, "Setup the local build tools first", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Prepare the local build tools first", Toast.LENGTH_SHORT).show()
             return
         }
         buildButton.isEnabled = false
@@ -118,9 +125,7 @@ class BuildActivity : AppCompatActivity() {
                 builtApk = result.apk
                 buildButton.isEnabled = true
                 installButton.isEnabled = result.success && result.apk != null
-                if (result.success) {
-                    Toast.makeText(this, "Build successful", Toast.LENGTH_SHORT).show()
-                }
+                if (result.success) Toast.makeText(this, "Build successful", Toast.LENGTH_SHORT).show()
             }
         }
     }
