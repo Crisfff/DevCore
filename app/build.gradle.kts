@@ -3,6 +3,8 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val ciBuildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+
 android {
     namespace = "com.devcore.app"
     compileSdk = 35
@@ -11,8 +13,8 @@ android {
         applicationId = "com.devcore.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 1000 + ciBuildNumber
+        versionName = "0.1.$ciBuildNumber"
     }
 
     compileOptions {
