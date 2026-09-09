@@ -32,78 +32,46 @@ class ToolchainManager(private val context: Context) {
 
     private fun resolveWithoutMarker(): ToolchainPaths? {
         if (!root.exists()) return null
-        val java = root.walkTopDown().firstOrNull { it.isFile && it.name == "java" && it.parentFile?.name == "bin" }
-            ?: return null
-        val gradle = root.walkTopDown().firstOrNull { it.isFile && it.name == "gradle" && it.parentFile?.name == "bin" }
-            ?: return null
-        val aapt2 = root.walkTopDown().firstOrNull { it.isFile && it.name == "aapt2" }
-            ?: return null
-        val androidJar = root.walkTopDown().firstOrNull { it.isFile && it.name == "android.jar" && it.parentFile?.name?.startsWith("android-") == true }
-            ?: return null
-        val sdkRoot = generateSequence(androidJar.parentFile) { it.parentFile }
-            .firstOrNull { File(it, "platforms").exists() }
-            ?: return null
-
-        return ToolchainPaths(
-            javaHome = java.parentFile.parentFile,
-            gradleHome = gradle.parentFile.parentFile,
-            sdkRoot = sdkRoot,
-            aapt2 = aapt2
-        )
+        val java = root.walkTopDown().firstOrNull { it.isFile && it.name == "java" && it.parentFile?.name == "bin" } ?: return null
+        val gradle = root.walkTopDown().firstOrNull { it.isFile && it.name == "gradle" && it.parentFile?.name == "bin" } ?: return null
+        val aapt2 = root.walkTopDown().firstOrNull { it.isFile && it.name == "aapt2" } ?: return null
+        val androidJar = root.walkTopDown().firstOrNull { it.isFile && it.name == "android.jar" && it.parentFile?.name?.startsWith("android-") == true } ?: return null
+        val sdkRoot = generateSequence(androidJar.parentFile) { it.parentFile }.firstOrNull { File(it, "platforms").exists() } ?: return null
+        return ToolchainPaths(java.parentFile.parentFile, gradle.parentFile.parentFile, sdkRoot, aapt2)
     }
 
     fun install(onProgress: (String) -> Unit): Result<ToolchainPaths> = runCatching {
         require(isSupportedDevice()) { "Local builds currently require an arm64-v8a device." }
         root.mkdirs()
         marker.delete()
-
         val jdkDir = File(root, "jdk").apply { mkdirs() }
         val sdkDir = File(root, "sdk").apply { mkdirs() }
         val gradleDir = File(root, "gradle").apply { mkdirs() }
 
         if (jdkDir.walkTopDown().none { it.name == "java" && it.parentFile?.name == "bin" }) {
             onProgress("Downloading OpenJDK 17…")
-            extractTarXz(
-                "https://github.com/itsaky/openjdk-17-android/releases/download/01-01-2022/jdk17-arm64.tar.xz",
-                jdkDir,
-                onProgress
-            )
+            extractTarXz("https://github.com/itsaky/openjdk-17-android/releases/download/01-01-2022/jdk17-arm64.tar.xz", jdkDir, onProgress)
         } else onProgress("OpenJDK 17 already installed.")
 
         if (sdkDir.walkTopDown().none { it.name == "android.jar" }) {
             onProgress("Downloading Android SDK…")
-            extractTarXz(
-                "https://github.com/AndroidIDEOfficial/androidide-tools/releases/download/sdk/android-sdk.tar.xz",
-                sdkDir,
-                onProgress
-            )
+            extractTarXz("https://github.com/AndroidIDEOfficial/androidide-tools/releases/download/sdk/android-sdk.tar.xz", sdkDir, onProgress)
         } else onProgress("Android SDK already installed.")
 
         if (sdkDir.walkTopDown().none { it.name == "aapt2" }) {
             onProgress("Downloading Android build tools 34.0.4…")
-            extractTarXz(
-                "https://github.com/AndroidIDEOfficial/androidide-tools/releases/download/v34.0.4/build-tools-34.0.4-aarch64.tar.xz",
-                sdkDir,
-                onProgress
-            )
+            extractTarXz("https://github.com/AndroidIDEOfficial/androidide-tools/releases/download/v34.0.4/build-tools-34.0.4-aarch64.tar.xz", sdkDir, onProgress)
         } else onProgress("Android build tools already installed.")
 
         if (gradleDir.walkTopDown().none { it.name == "gradle" && it.parentFile?.name == "bin" }) {
             onProgress("Downloading Gradle 8.9…")
-            extractZip(
-                "https://services.gradle.org/distributions/gradle-8.9-bin.zip",
-                gradleDir,
-                onProgress
-            )
+            extractZip("https://services.gradle.org/distributions/gradle-8.9-bin.zip", gradleDir, onProgress)
         } else onProgress("Gradle already installed.")
 
         onProgress("Preparing executables…")
         root.walkTopDown().filter { it.isFile }.forEach { file ->
-            if (file.parentFile?.name == "bin" || file.name in setOf("aapt", "aapt2", "aidl", "zipalign", "adb", "gradle", "java", "javac", "keytool")) {
-                file.setExecutable(true, false)
-            }
+            if (file.parentFile?.name == "bin" || file.name in setOf("aapt", "aapt2", "aidl", "zipalign", "adb", "gradle", "java", "javac", "keytool")) file.setExecutable(true, false)
         }
-
         val paths = resolveWithoutMarker() ?: error("Toolchain files were downloaded, but DevCore could not locate Java, Gradle, Android SDK or aapt2.")
         marker.writeText("installed=${System.currentTimeMillis()}\n")
         onProgress("Build tools ready.")
@@ -132,32 +100,33 @@ class ToolchainManager(private val context: Context) {
             TarArchiveInputStream(xz).use { tar ->
                 var entry = tar.nextTarEntry
                 while (entry != null) {
-                    val out = safeFile(destination, entry.name)
-                    when {
-                        entry.isDirectory -> out.mkdirs()
-                        entry.isSymbolicLink -> pendingLinks += Triple(out, entry.linkName, false)
-                        entry.isLink -> pendingLinks += Triple(out, entry.linkName, true)
-                        else -> {
-                            out.parentFile?.mkdirs()
-                            FileOutputStream(out).use { tar.copyTo(it) }
-                            if (entry.mode and 0b001001001 != 0) out.setExecutable(true, false)
+                    val normalized = normalizeArchivePath(entry.name)
+                    if (normalized != null) {
+                        val out = safeFile(destination, normalized)
+                        when {
+                            entry.isDirectory -> out.mkdirs()
+                            entry.isSymbolicLink -> pendingLinks += Triple(out, entry.linkName, false)
+                            entry.isLink -> pendingLinks += Triple(out, entry.linkName, true)
+                            else -> {
+                                out.parentFile?.mkdirs()
+                                FileOutputStream(out).use { tar.copyTo(it) }
+                                if (entry.mode and 0b001001001 != 0) out.setExecutable(true, false)
+                            }
                         }
                     }
                     entry = tar.nextTarEntry
                 }
             }
         }
-
         pendingLinks.forEach { (out, linkName, hardLink) ->
             runCatching {
                 out.parentFile?.mkdirs()
                 Files.deleteIfExists(out.toPath())
                 if (hardLink) {
-                    val target = safeFile(destination, linkName)
-                    Files.createLink(out.toPath(), target.toPath())
+                    val normalizedTarget = normalizeArchivePath(linkName) ?: return@runCatching
+                    Files.createLink(out.toPath(), safeFile(destination, normalizedTarget).toPath())
                 } else {
-                    val targetPath = java.nio.file.Paths.get(linkName)
-                    Files.createSymbolicLink(out.toPath(), targetPath)
+                    Files.createSymbolicLink(out.toPath(), java.nio.file.Paths.get(linkName))
                 }
             }
         }
@@ -175,10 +144,13 @@ class ToolchainManager(private val context: Context) {
         ZipInputStream(counting).use { zip ->
             var entry = zip.nextEntry
             while (entry != null) {
-                val out = safeFile(destination, entry.name)
-                if (entry.isDirectory) out.mkdirs() else {
-                    out.parentFile?.mkdirs()
-                    FileOutputStream(out).use { zip.copyTo(it) }
+                val normalized = normalizeArchivePath(entry.name)
+                if (normalized != null) {
+                    val out = safeFile(destination, normalized)
+                    if (entry.isDirectory) out.mkdirs() else {
+                        out.parentFile?.mkdirs()
+                        FileOutputStream(out).use { zip.copyTo(it) }
+                    }
                 }
                 zip.closeEntry()
                 entry = zip.nextEntry
@@ -187,36 +159,32 @@ class ToolchainManager(private val context: Context) {
         conn.disconnect()
     }
 
-    private fun safeFile(base: File, relative: String): File {
-        val out = File(base, relative)
-        val basePath = base.canonicalPath + File.separator
-        require(out.canonicalPath.startsWith(basePath)) { "Unsafe archive path: $relative" }
-        return out
+    private fun normalizeArchivePath(relative: String): String? {
+        var value = relative.replace('\\', '/').trim()
+        while (value.startsWith("./")) value = value.removePrefix("./")
+        value = value.trimStart('/')
+        if (value.isBlank() || value == ".") return null
+        val parts = value.split('/').filter { it.isNotBlank() && it != "." }
+        require(parts.none { it == ".." }) { "Unsafe archive path: $relative" }
+        return parts.joinToString("/").takeIf { it.isNotBlank() }
     }
 
-    private class ProgressInputStream(
-        input: java.io.InputStream,
-        private val total: Long,
-        private val progress: (Long, Long) -> Unit
-    ) : java.io.FilterInputStream(input) {
+    private fun safeFile(base: File, relative: String): File {
+        val out = File(base, relative)
+        val baseCanonical = base.canonicalFile
+        val outCanonical = out.canonicalFile
+        require(outCanonical == baseCanonical || outCanonical.path.startsWith(baseCanonical.path + File.separator)) { "Unsafe archive path: $relative" }
+        return outCanonical
+    }
+
+    private class ProgressInputStream(input: java.io.InputStream, private val total: Long, private val progress: (Long, Long) -> Unit) : java.io.FilterInputStream(input) {
         private var count = 0L
         private var lastReport = 0L
-        override fun read(): Int {
-            val result = super.read()
-            if (result >= 0) add(1)
-            return result
-        }
-        override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
-            val result = super.read(buffer, offset, length)
-            if (result > 0) add(result.toLong())
-            return result
-        }
+        override fun read(): Int { val result = super.read(); if (result >= 0) add(1); return result }
+        override fun read(buffer: ByteArray, offset: Int, length: Int): Int { val result = super.read(buffer, offset, length); if (result > 0) add(result.toLong()); return result }
         private fun add(value: Long) {
             count += value
-            if (count - lastReport >= 2L * 1024 * 1024 || count == total) {
-                lastReport = count
-                progress(count, total)
-            }
+            if (count - lastReport >= 2L * 1024 * 1024 || count == total) { lastReport = count; progress(count, total) }
         }
     }
 }
