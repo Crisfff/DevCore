@@ -12,9 +12,12 @@ android {
     defaultConfig {
         applicationId = "com.devcore.app"
         minSdk = 26
-        targetSdk = 35
+        // DevCore executes a downloaded local JDK/Gradle/Android build toolchain.
+        // Android 10+ blocks execve from writable app storage for targetSdk >= 29,
+        // so this developer-only IDE intentionally targets 28.
+        targetSdk = 28
         versionCode = 1000 + ciBuildNumber
-        versionName = "0.1.$ciBuildNumber"
+        versionName = "0.2.$ciBuildNumber"
     }
 
     compileOptions {
@@ -32,4 +35,6 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.documentfile:documentfile:1.0.1")
     implementation("com.google.android.material:material:1.12.0")
+    implementation("org.apache.commons:commons-compress:1.27.1")
+    implementation("org.tukaani:xz:1.10")
 }
