@@ -11,59 +11,63 @@ class LocalBuildEngine(private val context: Context) {
     private val executor = Executors.newSingleThreadExecutor()
 
     fun build(project: ProjectStore.Project, callback: (Result) -> Unit) {
-        executor.execute {
-            callback(runBuild(project))
-        }
+        executor.execute { callback(runBuild(project)) }
     }
 
     private fun runBuild(project: ProjectStore.Project): Result {
-        val toolchain = File(context.filesDir, "toolchain")
-        val javaHome = File(toolchain, "jdk")
-        val gradleBin = File(toolchain, "gradle/bin/gradle")
-        val sdkRoot = File(toolchain, "android-sdk")
-        val aapt2 = File(sdkRoot, "build-tools/34.0.4/aapt2")
+        val paths = ToolchainManager(context).resolve()
+            ?: return Result(false, "Local build tools are not installed. Tap Setup Build Tools first.", null)
 
-        if (!gradleBin.exists() || !File(javaHome, "bin/java").exists() || !sdkRoot.exists()) {
-            return Result(
-                false,
-                "DevCore local build tools are not installed yet.\n\n" +
-                    "Required: OpenJDK, Gradle, Android SDK and Android-native aapt2.\n" +
-                    "The editor and project system are ready, but this device still needs the local toolchain package.",
-                null
-            )
-        }
+        val gradleBin = File(paths.gradleHome, "bin/gradle")
+        val javaBin = File(paths.javaHome, "bin/java")
+        gradleBin.setExecutable(true, false)
+        javaBin.setExecutable(true, false)
+        paths.aapt2.setExecutable(true, false)
 
-        val command = mutableListOf(
-            gradleBin.absolutePath,
-            "--no-daemon",
-            "assembleDebug"
-        )
-        if (aapt2.exists()) {
-            command.add("-Pandroid.aapt2FromMavenOverride=${aapt2.absolutePath}")
+        if (!gradleBin.exists() || !javaBin.exists()) {
+            return Result(false, "Java or Gradle executable is missing from the installed toolchain.", null)
         }
 
         return try {
+            val command = listOf(
+                gradleBin.absolutePath,
+                "--no-daemon",
+                "--console=plain",
+                "-Pandroid.aapt2FromMavenOverride=${paths.aapt2.absolutePath}",
+                "assembleDebug"
+            )
+
             val pb = ProcessBuilder(command)
                 .directory(project.root)
                 .redirectErrorStream(true)
-            pb.environment()["JAVA_HOME"] = javaHome.absolutePath
-            pb.environment()["ANDROID_HOME"] = sdkRoot.absolutePath
-            pb.environment()["ANDROID_SDK_ROOT"] = sdkRoot.absolutePath
+
+            pb.environment()["JAVA_HOME"] = paths.javaHome.absolutePath
+            pb.environment()["ANDROID_HOME"] = paths.sdkRoot.absolutePath
+            pb.environment()["ANDROID_SDK_ROOT"] = paths.sdkRoot.absolutePath
+            pb.environment()["GRADLE_USER_HOME"] = File(context.filesDir, "gradle-home").apply { mkdirs() }.absolutePath
+            pb.environment()["HOME"] = context.filesDir.absolutePath
             pb.environment()["PATH"] = listOf(
-                File(javaHome, "bin").absolutePath,
-                File(sdkRoot, "platform-tools").absolutePath,
-                File(sdkRoot, "build-tools/34.0.4").absolutePath,
-                System.getenv("PATH") ?: ""
-            ).joinToString(":")
+                File(paths.javaHome, "bin").absolutePath,
+                File(paths.gradleHome, "bin").absolutePath,
+                paths.aapt2.parentFile?.absolutePath.orEmpty(),
+                System.getenv("PATH") ?: "/system/bin"
+            ).filter { it.isNotBlank() }.joinToString(":")
 
             val process = pb.start()
-            val log = process.inputStream.bufferedReader().readText()
+            val log = process.inputStream.bufferedReader().use { it.readText() }
             val code = process.waitFor()
             val apk = project.root.walkTopDown()
-                .firstOrNull { it.isFile && it.name.endsWith("-debug.apk") && it.path.contains("/outputs/apk/") }
-            Result(code == 0 && apk != null, log, apk)
+                .filter { it.isFile && it.extension == "apk" }
+                .filter { it.path.contains("/build/outputs/apk/") }
+                .maxByOrNull { it.lastModified() }
+
+            if (code == 0 && apk != null) {
+                Result(true, "$log\n\nAPK: ${apk.absolutePath}", apk)
+            } else {
+                Result(false, "$log\n\nGradle exited with code $code.", apk)
+            }
         } catch (e: Exception) {
-            Result(false, "Build failed to start: ${e.message}", null)
+            Result(false, "Build failed to start: ${e.javaClass.simpleName}: ${e.message}", null)
         }
     }
 }
