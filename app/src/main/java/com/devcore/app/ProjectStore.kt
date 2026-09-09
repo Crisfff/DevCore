@@ -79,16 +79,18 @@ object ProjectStore {
                     id("org.jetbrains.kotlin.android")
                 }
 
+                val devCoreBuildNumber = providers.gradleProperty("devcoreBuildNumber").orNull?.toIntOrNull() ?: 1
+
                 android {
                     namespace = "$pkg"
-                    compileSdk = 35
+                    compileSdk = 34
 
                     defaultConfig {
                         applicationId = "$pkg"
                         minSdk = 26
-                        targetSdk = 35
-                        versionCode = 1
-                        versionName = "1.0"
+                        targetSdk = 34
+                        versionCode = devCoreBuildNumber
+                        versionName = "1.0.${'$'}devCoreBuildNumber"
                     }
 
                     compileOptions {
@@ -167,6 +169,7 @@ object ProjectStore {
         val meta = File(root, ".devcore/project.properties")
         meta.parentFile?.mkdirs()
         meta.writeText("name=$safeName\npackage=$pkg\ncreated=${System.currentTimeMillis()}\n")
+        File(root, ".devcore/build-number").writeText("0")
         root.setLastModified(System.currentTimeMillis())
         return Project(safeName, pkg, root, root.lastModified())
     }
@@ -174,10 +177,49 @@ object ProjectStore {
     fun editableFiles(project: Project): List<File> =
         project.root.walkTopDown()
             .filter { it.isFile }
-            .filterNot { it.path.contains("/.gradle/") || it.path.contains("/build/") || it.name == "project.properties" }
+            .filterNot { it.path.contains("/.gradle/") || it.path.contains("/build/") || it.path.contains("/.devcore/") }
             .filter { it.extension.lowercase(Locale.US) in setOf("kt", "kts", "xml", "json", "properties", "gradle", "java", "txt", "md") }
             .sortedBy { it.relativeTo(project.root).path }
             .toList()
+
+    fun createFile(project: Project, relativePath: String): File {
+        val cleaned = relativePath.trim().trimStart('/').replace("\\", "/")
+        require(cleaned.isNotBlank()) { "File path is empty" }
+        val file = File(project.root, cleaned)
+        require(file.canonicalPath.startsWith(project.root.canonicalPath + File.separator)) { "Invalid file path" }
+        require(!file.exists()) { "File already exists" }
+        file.parentFile?.mkdirs()
+        file.writeText(defaultContentFor(file, project))
+        touch(project)
+        return file
+    }
+
+    fun createFolder(project: Project, relativePath: String): File {
+        val cleaned = relativePath.trim().trimStart('/').replace("\\", "/")
+        require(cleaned.isNotBlank()) { "Folder path is empty" }
+        val folder = File(project.root, cleaned)
+        require(folder.canonicalPath.startsWith(project.root.canonicalPath + File.separator)) { "Invalid folder path" }
+        require(!folder.exists()) { "Folder already exists" }
+        require(folder.mkdirs()) { "Could not create folder" }
+        touch(project)
+        return folder
+    }
+
+    fun deleteFile(project: Project, file: File) {
+        require(file.canonicalPath.startsWith(project.root.canonicalPath + File.separator)) { "Invalid file" }
+        require(!file.path.contains("/.devcore/")) { "Protected DevCore file" }
+        if (file.isDirectory) file.deleteRecursively() else require(file.delete()) { "Could not delete file" }
+        touch(project)
+    }
+
+    fun nextBuildNumber(project: Project): Int {
+        val file = File(project.root, ".devcore/build-number")
+        file.parentFile?.mkdirs()
+        val current = file.takeIf { it.exists() }?.readText()?.trim()?.toIntOrNull() ?: 0
+        val next = current + 1
+        file.writeText(next.toString())
+        return next
+    }
 
     fun touch(project: Project) {
         project.root.setLastModified(System.currentTimeMillis())
@@ -185,6 +227,13 @@ object ProjectStore {
 
     fun prettyDate(time: Long): String =
         SimpleDateFormat("MMM d, yyyy  h:mm a", Locale.getDefault()).format(Date(time))
+
+    private fun defaultContentFor(file: File, project: Project): String = when (file.extension.lowercase(Locale.US)) {
+        "kt" -> "package ${project.packageName}\n\n"
+        "xml" -> "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+        "json" -> "{}\n"
+        else -> ""
+    }
 
     private fun uniqueProjectDir(base: File, name: String): File {
         var candidate = File(base, name)
