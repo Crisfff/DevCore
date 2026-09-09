@@ -18,23 +18,28 @@ class LocalBuildEngine(private val context: Context) {
         val paths = ToolchainManager(context).resolve()
             ?: return Result(false, "Local build tools are not installed. Tap Setup Build Tools first.", null)
 
-        val gradleBin = File(paths.gradleHome, "bin/gradle")
         val javaBin = File(paths.javaHome, "bin/java")
-        gradleBin.setExecutable(true, false)
+        val gradleLauncher = File(paths.gradleHome, "lib").listFiles()
+            ?.firstOrNull { it.isFile && it.name.startsWith("gradle-launcher-") && it.extension == "jar" }
+
         javaBin.setExecutable(true, false)
         paths.aapt2.setExecutable(true, false)
 
-        if (!gradleBin.exists() || !javaBin.exists()) {
-            return Result(false, "Java or Gradle executable is missing from the installed toolchain.", null)
+        if (!javaBin.exists() || gradleLauncher == null) {
+            return Result(false, "Java or Gradle launcher is missing from the installed toolchain.", null)
         }
 
         return try {
             val buildNumber = ProjectStore.nextBuildNumber(project)
             val command = listOf(
-                gradleBin.absolutePath,
+                javaBin.absolutePath,
+                "-Duser.home=${context.filesDir.absolutePath}",
+                "-Xmx1536m",
+                "-classpath",
+                gradleLauncher.absolutePath,
+                "org.gradle.launcher.GradleMain",
                 "--no-daemon",
                 "--console=plain",
-                "-Duser.home=${context.filesDir.absolutePath}",
                 "-PdevcoreBuildNumber=$buildNumber",
                 "-Pandroid.aapt2FromMavenOverride=${paths.aapt2.absolutePath}",
                 "assembleDebug"
@@ -49,11 +54,16 @@ class LocalBuildEngine(private val context: Context) {
             pb.environment()["ANDROID_SDK_ROOT"] = paths.sdkRoot.absolutePath
             pb.environment()["GRADLE_USER_HOME"] = File(context.filesDir, "gradle-home").apply { mkdirs() }.absolutePath
             pb.environment()["HOME"] = context.filesDir.absolutePath
+            pb.environment()["LD_LIBRARY_PATH"] = listOf(
+                File(paths.javaHome, "lib").absolutePath,
+                File(paths.javaHome, "lib/server").absolutePath,
+                System.getenv("LD_LIBRARY_PATH") ?: ""
+            ).filter { it.isNotBlank() }.joinToString(":")
             pb.environment()["PATH"] = listOf(
                 File(paths.javaHome, "bin").absolutePath,
-                File(paths.gradleHome, "bin").absolutePath,
                 paths.aapt2.parentFile?.absolutePath.orEmpty(),
-                System.getenv("PATH") ?: "/system/bin"
+                "/system/bin",
+                "/system/xbin"
             ).filter { it.isNotBlank() }.joinToString(":")
 
             val process = pb.start()
