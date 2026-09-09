@@ -16,17 +16,28 @@
         android:textStyle="bold" />
 
     <TextView
+        android:id="@+id/toolchainStatus"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
-        android:text="Local build console"
+        android:text="Checking local build tools…"
         android:textColor="#9298A5"
         android:textSize="14sp" />
+
+    <Button
+        android:id="@+id/setupToolsButton"
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:layout_marginTop="16dp"
+        android:backgroundTint="#15171B"
+        android:text="Setup Build Tools"
+        android:textColor="#FFFFFF"
+        android:textStyle="bold" />
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="18dp"
+        android:layout_marginTop="10dp"
         android:orientation="horizontal">
 
         <Button
