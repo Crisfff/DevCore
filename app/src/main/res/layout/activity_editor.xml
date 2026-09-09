@@ -24,7 +24,7 @@
 
         <Button
             android:id="@+id/saveFileButton"
-            android:layout_width="88dp"
+            android:layout_width="82dp"
             android:layout_height="48dp"
             android:backgroundTint="#15171B"
             android:text="Save"
@@ -32,7 +32,7 @@
 
         <Button
             android:id="@+id/buildProjectButton"
-            android:layout_width="88dp"
+            android:layout_width="82dp"
             android:layout_height="48dp"
             android:layout_marginStart="8dp"
             android:backgroundTint="#FFEA00"
@@ -40,11 +40,47 @@
             android:textColor="#000000" />
     </LinearLayout>
 
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/newFileButton"
+            android:layout_width="0dp"
+            android:layout_height="46dp"
+            android:layout_weight="1"
+            android:backgroundTint="#15171B"
+            android:text="New File"
+            android:textColor="#FFFFFF" />
+
+        <Button
+            android:id="@+id/newFolderButton"
+            android:layout_width="0dp"
+            android:layout_height="46dp"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:backgroundTint="#15171B"
+            android:text="New Folder"
+            android:textColor="#FFFFFF" />
+
+        <Button
+            android:id="@+id/deleteFileButton"
+            android:layout_width="0dp"
+            android:layout_height="46dp"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:backgroundTint="#15171B"
+            android:text="Delete"
+            android:textColor="#FF6B6B" />
+    </LinearLayout>
+
     <Spinner
         android:id="@+id/fileSpinner"
         android:layout_width="match_parent"
         android:layout_height="52dp"
-        android:layout_marginTop="12dp"
+        android:layout_marginTop="10dp"
         android:backgroundTint="#FFEA00" />
 
     <TextView
