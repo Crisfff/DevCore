@@ -8,27 +8,53 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
       - uses: android-actions/setup-android@v3
+
       - run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+
+      - name: Bundle local Android toolchain assets
+        run: |
+          set -euxo pipefail
+          mkdir -p app/src/main/assets/toolchain
+          curl -L --fail --retry 3 --retry-delay 3 \
+            "https://github.com/itsaky/openjdk-17-android/releases/download/01-01-2022/jdk17-arm64.tar.xz" \
+            -o app/src/main/assets/toolchain/jdk17-arm64.tar.xz
+          curl -L --fail --retry 3 --retry-delay 3 \
+            "https://github.com/AndroidIDEOfficial/androidide-tools/releases/download/sdk/android-sdk.tar.xz" \
+            -o app/src/main/assets/toolchain/android-sdk.tar.xz
+          curl -L --fail --retry 3 --retry-delay 3 \
+            "https://github.com/AndroidIDEOfficial/androidide-tools/releases/download/v34.0.4/build-tools-34.0.4-aarch64.tar.xz" \
+            -o app/src/main/assets/toolchain/build-tools-34.0.4-aarch64.tar.xz
+          curl -L --fail --retry 3 --retry-delay 3 \
+            "https://services.gradle.org/distributions/gradle-8.9-bin.zip" \
+            -o app/src/main/assets/toolchain/gradle-8.9-bin.zip
+          ls -lh app/src/main/assets/toolchain
+
       - name: Restore stable debug keystore
         uses: actions/cache@v4
         with:
           path: ~/.android/debug.keystore
           key: devcore-debug-keystore-v1
+
       - name: Ensure debug keystore exists
         run: |
           mkdir -p ~/.android
           if [ ! -f ~/.android/debug.keystore ]; then
             keytool -genkeypair -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000
           fi
+
       - run: gradle assembleDebug
+
       - uses: actions/upload-artifact@v4
         with:
           name: DevCore-debug-${{ github.run_number }}
